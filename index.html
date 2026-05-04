@@ -24,9 +24,13 @@ const SUPA_URL = "https://mwjjuwtocywpvsesxfxk.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13amp1d3RvY3l3cHZzZXN4ZnhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NDk0MDIsImV4cCI6MjA5MjAyNTQwMn0.nc-TUpDHjyW0hlOcjAxrcblgDcsl6aUqeKTy_YtZdkE";
 const supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 
+function currentUserId() {
+  return window.__currentUser?.id || null;
+}
+
 async function dbLoad(table) {
   try {
-    const { data, error } = await supabase.from(table).select("*");
+    const { data, error } = await supabase.from(table).select("*").eq("user_id", currentUserId());
     if(error) { console.error("dbLoad error:", table, error); return []; }
     return (data || []).map(r => r.data).filter(Boolean);
   } catch(e) { console.error("dbLoad exception:", e); return []; }
@@ -35,7 +39,7 @@ async function dbLoad(table) {
 async function dbSave(table, arr) {
   try {
     if(!arr || !arr.length) return;
-    const rows = arr.map(item => ({ id: String(item.id), data: item }));
+    const rows = arr.map(item => ({ id: String(item.id), data: item, user_id: currentUserId() }));
     const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" });
     if(error) console.error("dbSave error:", table, error);
   } catch(e) { console.error("dbSave exception:", e); }
@@ -238,6 +242,46 @@ function downloadInvoicesHTML(invoicesList) {
 const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const emptySession = (date="",time="") => ({id:Date.now(),client:"",phone:"",email:"",type:"Retrato",date,time,total:"",paid:"",depositAmt:"",depositMethod:"",sessionAmt:"",sessionMethod:"",status:"Pendiente",notes:"",tags:[]});
 const emptyBlock   = (date="",time="") => ({id:Date.now(),label:"",date,time,timeTo:"",notes:"",isBlock:true});
+
+function Login() {
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (err) setError("Email o contraseña incorrectos");
+  }
+
+  return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f9f9f9"}}>
+      <form onSubmit={handleSubmit} style={{background:"#fff",padding:"2rem",borderRadius:10,border:"1px solid #e5e5e5",width:"100%",maxWidth:380,display:"flex",flexDirection:"column",gap:14}}>
+        <h2 style={{margin:0,fontSize:22,fontWeight:500,textAlign:"center"}}>MRS Fotografía</h2>
+        <p style={{margin:0,fontSize:14,color:"#666",textAlign:"center"}}>Accede a tu estudio</p>
+        <input
+          type="email" placeholder="Email" required value={email}
+          onChange={e=>setEmail(e.target.value)}
+          style={{padding:"10px 12px",fontSize:15,border:"1px solid #ccc",borderRadius:6,outline:"none"}}
+        />
+        <input
+          type="password" placeholder="Contraseña" required value={password}
+          onChange={e=>setPassword(e.target.value)}
+          style={{padding:"10px 12px",fontSize:15,border:"1px solid #ccc",borderRadius:6,outline:"none"}}
+        />
+        {error && <p style={{margin:0,fontSize:14,color:"#c00",textAlign:"center"}}>{error}</p>}
+        <button type="submit" disabled={loading}
+          style={{padding:"10px 12px",fontSize:15,fontWeight:600,background:"#111",color:"#fff",border:"none",borderRadius:6,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
+          {loading ? "Entrando…" : "Entrar"}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 function App() {
   const today = new Date();
@@ -467,6 +511,8 @@ function App() {
               reader.readAsText(file);
             }}/>
           </label>
+          <button title="Cerrar sesión" onClick={async()=>{ await supabase.auth.signOut(); }}
+            style={{padding:"6px 10px",fontSize:15,border:"0.5px solid #ccc",borderRadius:6,background:"none",cursor:"pointer",color:"#666"}}>🔒</button>
         </div>
       </div>
 
@@ -2215,7 +2261,29 @@ function InvoiceModal({ inv, invoices, onSave, onClose, fmtCur, inp, field }) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+function Root() {
+  const [session, setSession] = useState(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({data}) => {
+      setSession(data.session);
+      window.__currentUser = data.session?.user || null;
+      setChecking(false);
+    });
+    const {data: sub} = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      window.__currentUser = s?.user || null;
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  if (checking) return <div style={{padding:40,textAlign:"center"}}>Cargando…</div>;
+  if (!session) return <Login />;
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
 </script>
 </body>
 </html>
