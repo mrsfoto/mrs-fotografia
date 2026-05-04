@@ -1,0 +1,8 @@
+# Ignorar todo por defecto
+*
+
+# Pero permitir estos archivos
+!index.html
+!actualizar.bat
+!.gitignore
+!.git/
